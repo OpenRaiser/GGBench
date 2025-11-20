@@ -243,7 +243,7 @@ def evaluate_image_consistency(
             logging.warning("id=%s missing reference image (file not found): %s", item.get("id"), reference)
             item["VLM_eval_image_result"] = "1"
             return
-        pred_path = _resolve_path(pred_root, item.get("image_4") or item.get("output_image") or item.get("output_image_path"))
+        pred_path = _resolve_path(pred_root, item.get("image_path") or item.get("output_image") or item.get("output_image_path"))
         if not pred_path:
             logging.warning("id=%s missing predicted image (path is None).", item.get("id"))
             item["VLM_eval_image_result"] = "1"
@@ -313,7 +313,7 @@ def evaluate_lpips(
         if item.get("_skip"):
             continue
         reference: Optional[Path] = item.get("_reference_image")
-        pred = _resolve_path(pred_root, item.get("image_4") or item.get("output_image") or item.get("output_image_path"))
+        pred = _resolve_path(pred_root, item.get("image_path") or item.get("output_image") or item.get("output_image_path"))
         if not reference or not reference.exists() or not pred or not pred.exists():
             item["lpips_eval_image_result"] = "nan"
             continue
@@ -337,7 +337,7 @@ def evaluate_psnr(
         if item.get("_skip"):
             continue
         reference = item.get("_reference_image")
-        pred = _resolve_path(pred_root, item.get("image_4") or item.get("output_image") or item.get("output_image_path"))
+        pred = _resolve_path(pred_root, item.get("image_path") or item.get("output_image") or item.get("output_image_path"))
         if not reference or not reference.exists() or not pred or not pred.exists():
             item["psnr_eval_image_result"] = "nan"
             continue
@@ -363,14 +363,15 @@ def evaluate_ssim(
         if item.get("_skip"):
             continue
         reference = item.get("_reference_image")
-        pred = _resolve_path(pred_root, item.get("image_4") or item.get("output_image") or item.get("output_image_path"))
+        pred = _resolve_path(pred_root, item.get("image_path") or item.get("output_image") or item.get("output_image_path"))
         if not reference or not reference.exists() or not pred or not pred.exists():
             item["ssim_eval_image_result"] = "0"
             continue
         try:
             img1 = np.asarray(_load_image_for_metric(reference).convert("L"), dtype=np.float32)
             img2 = np.asarray(_load_image_for_metric(pred).convert("L"), dtype=np.float32)
-            score, _ = ssim(img1, img2, full=True)
+            # For float32 images, data_range must be specified (255 for images in [0, 255] range)
+            score, _ = ssim(img1, img2, full=True, data_range=255.0)
             if math.isnan(score) or math.isinf(score):
                 logging.warning("SSIM returned %s for id=%s; falling back to 0.0", score, item.get("id"))
                 score = 0
@@ -490,9 +491,9 @@ def generate_score_json(items: List[Dict[str, Any]], score_json_path: Path) -> N
     - VLM-T: Sum of eval_text_result divided by (DATASET_TOTAL_COUNT * 5) * 100
     - VLM-I-Mid: Sum of averages of "Step Accuracy" and "Process Consistency" divided by (DATASET_TOTAL_COUNT * 5) * 100
     - VLM-I-Res: Sum of "VLM_eval_image_result" divided by (DATASET_TOTAL_COUNT * 5) * 100
-    - LPIPS ×10-2: Sum of "lpips_eval_image_result" (multiplied by 10^-2) divided by (DATASET_TOTAL_COUNT * 100)
-    - PSNR: Sum of "psnr_eval_image_result" divided by (DATASET_TOTAL_COUNT * 100)
-    - SSIM ×10-2: Sum of "ssim_eval_image_result" (multiplied by 10^-2) divided by (DATASET_TOTAL_COUNT * 100)
+    - LPIPS ×10-2: Average of "lpips_eval_image_result" multiplied by 100 (to display as percentage)
+    - PSNR: Average of "psnr_eval_image_result" in dB (no scaling)
+    - SSIM ×10-2: Average of "ssim_eval_image_result" multiplied by 100 (to display as percentage)
     - VLM-I: Average of VLM-I-Mid and VLM-I-Res
     All results are rounded to 2 decimal places.
     """
@@ -524,29 +525,32 @@ def generate_score_json(items: List[Dict[str, Any]], score_json_path: Path) -> N
         vlm_t = eval_text
         vlm_i_mid = (step_acc + process_cons) / 2.0  # Average of Step Accuracy and Process Consistency
         vlm_i_res = vlm_image
-        lpips_scaled = lpips * (10 ** -2)  # Multiply by 10^-2, i.e., divide by 100
+        # LPIPS and SSIM: accumulate original values (will be scaled to ×10-2 format later)
         psnr_value = psnr
-        ssim_scaled = ssim * (10 ** -2)  # Multiply by 10^-2, i.e., divide by 100
         
         # Accumulate sums
         total_vlm_t += vlm_t
         total_vlm_i_mid += vlm_i_mid
         total_vlm_i_res += vlm_i_res
-        total_lpips_scaled += lpips_scaled
+        total_lpips_scaled += lpips  # Accumulate original LPIPS values
         total_psnr += psnr_value
-        total_ssim_scaled += ssim_scaled
+        total_ssim_scaled += ssim  # Accumulate original SSIM values
     
     # Calculate final scores with normalization
     # Use fixed dataset total count (1411) instead of actual evaluated count
     # VLM-T, VLM-I-Mid, VLM-I-Res: divide by (DATASET_TOTAL_COUNT * 5) * 100
-    # LPIPS ×10-2, PSNR, SSIM ×10-2: divide by (DATASET_TOTAL_COUNT * 100)
+    # LPIPS ×10-2, SSIM ×10-2: average value * 100 (to display as percentage)
+    # PSNR: average value
     if DATASET_TOTAL_COUNT > 0:
         vlm_t_score = (total_vlm_t / (DATASET_TOTAL_COUNT * 5)) * 100
         vlm_i_mid_score = (total_vlm_i_mid / (DATASET_TOTAL_COUNT * 5)) * 100
         vlm_i_res_score = (total_vlm_i_res / (DATASET_TOTAL_COUNT * 5)) * 100
-        lpips_score = (total_lpips_scaled / DATASET_TOTAL_COUNT) * 100
-        psnr_score = (total_psnr / DATASET_TOTAL_COUNT) * 100
-        ssim_score = (total_ssim_scaled / DATASET_TOTAL_COUNT) * 100
+        # LPIPS ×10-2: average LPIPS * 100 (to convert 0.5 -> 50.0)
+        lpips_score = (total_lpips_scaled / total_count) * 100 if total_count > 0 else 0.0
+        # PSNR: average value in dB (no scaling needed)
+        psnr_score = (total_psnr / total_count) if total_count > 0 else 0.0
+        # SSIM ×10-2: average SSIM * 100 (to convert 0.64 -> 64.0)
+        ssim_score = (total_ssim_scaled / total_count) * 100 if total_count > 0 else 0.0
         vlm_i_score = (vlm_i_mid_score + vlm_i_res_score) / 2.0
     else:
         vlm_t_score = 0.0
