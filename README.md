@@ -81,3 +81,15 @@ Main results on GGBench. VLM-T and VLM-I denote step reasoning and final diagram
 
 See the [full leaderboard](https://opendatalab-raiser.github.io/GGBench/#leaderboard) for detailed results across all evaluated models.
 
+## Citation
+
+If you are interested in our repository or our paper, please cite the following paper:
+
+```
+@article{wei2025ggbench,
+  title={GGBench: A Geometric Generative Reasoning Benchmark for Unified Multimodal Models},
+  author={Wei, Jingxuan and Jia, Caijun and Bai, Xi and Xu, Xinglong and Li, Siyuan and Sun, Linzhuang and Yu, Bihui and He, Conghui and Wu, Lijun and Tan, Cheng},
+  journal={arXiv preprint arXiv:2511.11134},
+  year={2025}
+}
+```
