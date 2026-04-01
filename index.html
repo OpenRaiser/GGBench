@@ -856,12 +856,12 @@
 
     <script>
         document.getElementById("copyBibtex").addEventListener("click", function () {
-            const text = `@article{author2025yourproject,
-    title={Your Research Project Title},
-    author={Author One and Author Two and Author Three and Author Four},
-    journal={Journal Name},
-    year={2025}
-  }`;
+            const text = `@article{wei2025ggbench,
+  title={GGBench: A Geometric Generative Reasoning Benchmark for Unified Multimodal Models},
+  author={Wei, Jingxuan and Jia, Caijun and Bai, Xi and Xu, Xinglong and Li, Siyuan and Sun, Linzhuang and Yu, Bihui and He, Conghui and Wu, Lijun and Tan, Cheng},
+  journal={arXiv preprint arXiv:2511.11134},
+  year={2025}
+}`;
             navigator.clipboard.writeText(text).then(() => {
                 const btn = document.getElementById("copyBibtex");
                 btn.textContent = "Copied!";
